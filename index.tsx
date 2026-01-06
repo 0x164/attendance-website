@@ -30,6 +30,37 @@ interface AttendanceStore {
   };
 }
 
+// --- UTILS ---
+const copyToClipboard = async (text: string) => {
+  if (typeof window !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.error('Clipboard API failed, trying fallback', err);
+    }
+  }
+  
+  // Fallback for environments where navigator.clipboard is unavailable
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  textArea.style.top = "0";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  try {
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch (err) {
+    console.error('Fallback copy failed', err);
+    document.body.removeChild(textArea);
+    return false;
+  }
+};
+
 // --- DATA GENERATION & CONSTANTS ---
 const DEFAULT_SCHEDULE: Omit<DailySchedule, 'date'>[] = [
   { day: 'Monday', sessions: [{ id: 'mon_1', courseCode: 'FIT1047', sessionType: 'W02' }] },
@@ -93,9 +124,8 @@ const generateWeeks = (count: number, startDate: Date): AcademicWeek[] => {
 /**
  * CALCULATION:
  * Jan 6, 2026 (Tuesday) is Week 10.
- * Therefore, Jan 5, 2026 (Monday) is start of Week 10.
- * Week 1 starts 9 weeks prior to Jan 5, 2026.
- * Week 1 Monday = Nov 3, 2025.
+ * Week 10 Monday is Jan 5, 2026.
+ * Week 1 Monday = Jan 5, 2026 - (9 * 7 days) = Nov 3, 2025.
  */
 const ACADEMIC_WEEKS = generateWeeks(20, new Date(2025, 10, 3)); 
 
@@ -104,7 +134,6 @@ const ACADEMIC_WEEKS = generateWeeks(20, new Date(2025, 10, 3));
 const WeekSelector = ({ onSelect }: { onSelect: (w: AcademicWeek) => void }) => {
   const now = new Date();
   
-  // Group weeks by month
   const groupedWeeks = ACADEMIC_WEEKS.reduce((acc, week) => {
     if (!acc[week.monthLabel]) acc[week.monthLabel] = [];
     acc[week.monthLabel].push(week);
@@ -126,7 +155,6 @@ const WeekSelector = ({ onSelect }: { onSelect: (w: AcademicWeek) => void }) => 
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {weeks.map((w) => {
-              // A week is current if today is between start date and next week's start
               const isCurrent = now >= w.startDate && now < new Date(w.startDate.getTime() + 7 * 86400000);
               return (
                 <button 
@@ -171,22 +199,11 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
 
   const copy = async (text: string, id: string) => {
     if (!text || text === 'XXXXX') return;
-    await navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1500);
-  };
-
-  const copyAll = async () => {
-    let out = `In the order of lessons in the week (click the code to copy to clipboard):\n\n`;
-    week.schedule.forEach((d: any) => {
-      out += `${d.day}, ${d.date}\n`;
-      d.sessions.forEach((s: any) => {
-        const val = attendance[s.id] || 'XXXXX';
-        out += `${s.courseCode} ${s.sessionType} - ${val}\n`;
-      });
-      out += `\n`;
-    });
-    copy(out.trim(), 'all');
+    const success = await copyToClipboard(text);
+    if (success) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    }
   };
 
   const handleEdit = (id: string) => {
@@ -198,13 +215,10 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
 
   return (
     <div className="w-full max-w-2xl animate-in slide-in-from-right-8 duration-500 px-4 pb-20">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-start mb-8">
         <button onClick={onBack} className="text-slate-500 font-bold hover:text-indigo-600 flex items-center transition-colors">
           <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
           All Weeks
-        </button>
-        <button onClick={copyAll} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-xl shadow-indigo-500/20 active:scale-95 transition-all">
-          {copiedId === 'all' ? 'Copied Full List!' : 'Copy As Text'}
         </button>
       </div>
       
@@ -250,14 +264,19 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
                           <div className="flex items-center gap-2">
                             <button 
                               onClick={() => copy(val, `val_${s.id}`)}
-                              className="w-32 text-center font-mono font-black py-2.5 rounded-xl bg-white dark:bg-slate-950 border-2 border-indigo-500/20 text-indigo-600 dark:text-indigo-400 uppercase hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-500 transition-all group/val shadow-sm"
+                              className="w-36 text-center font-mono font-black py-2.5 rounded-xl bg-white dark:bg-slate-950 border-2 border-indigo-500/20 text-indigo-600 dark:text-indigo-400 uppercase hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-500 transition-all group/val shadow-sm flex items-center justify-center gap-2"
                             >
                               {copiedId === `val_${s.id}` ? (
                                 <span className="flex items-center justify-center gap-2">
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                                   DONE
                                 </span>
-                              ) : val}
+                              ) : (
+                                <>
+                                  {val}
+                                  <svg className="w-3 h-3 opacity-40 group-hover/val:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                                </>
+                              )}
                             </button>
                             <button 
                               onClick={() => handleEdit(s.id)}
@@ -269,7 +288,7 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
                           </div>
                         ) : (
                           <input 
-                            ref={(el) => { inputRefs.current[s.id] = el; }}
+                            ref={(el) => { if (el) inputRefs.current[s.id] = el; }}
                             type="text" 
                             maxLength={5} 
                             placeholder="XXXXX"
@@ -296,7 +315,7 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
 const App = () => {
   const [selectedWeek, setSelectedWeek] = useState<AcademicWeek | null>(null);
   const [attendance, setAttendance] = useState<AttendanceStore>({});
-  const [isDarkMode, setIsDarkMode] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const [isDarkMode, setIsDarkMode] = useState(typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)').matches : false);
 
   useEffect(() => {
     fetch('/api/attendance').then(r => r.json()).then(setAttendance).catch(() => {});
@@ -352,7 +371,7 @@ const App = () => {
       
       <footer className="mt-auto pt-16 pb-8 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] flex flex-col items-center gap-2">
         <div className="w-12 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mb-2"></div>
-        University Attendance Tracker v2.5
+        University Attendance Tracker v2.6
         <span className="opacity-50 font-medium tracking-normal text-[8px]">Current Time: {new Date().toLocaleDateString()}</span>
       </footer>
     </div>
