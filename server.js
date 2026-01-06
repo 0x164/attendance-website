@@ -14,9 +14,17 @@ const DATA_FILE = path.join(__dirname, 'attendance.json');
 // 1. Global Middleware
 app.use(express.json());
 
+// 2. MIME Type Fix for .tsx and .ts files
+// Browsers require application/javascript for ESM modules
+app.use((req, res, next) => {
+    if (req.path.endsWith('.tsx') || req.path.endsWith('.ts')) {
+        res.set('Content-Type', 'application/javascript');
+    }
+    next();
+});
+
 /**
- * 2. API Routes
- * Handle these first so they don't get caught by the static file or SPA fallback.
+ * 3. API Routes
  */
 app.get('/api/attendance', (req, res) => {
     try {
@@ -43,18 +51,21 @@ app.post('/api/attendance', (req, res) => {
 });
 
 /**
- * 3. Static Files
- * Serves index.html, index.tsx, etc.
+ * 4. Static Files
  */
 app.use(express.static(__dirname));
 
 /**
- * 4. Catch-all Route for SPA
- * Using app.use without a path pattern is the safest way to provide a fallback
- * across all Node/Express versions because it avoids the path-to-regexp parser.
+ * 5. Catch-all Route for Single Page Application
+ * Only serve index.html for navigation requests, return 404 for missing assets.
  */
 app.use((req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    const ext = path.extname(req.path);
+    if (ext && ext !== '.html') {
+        res.status(404).send('Not Found');
+    } else {
+        res.sendFile(path.join(__dirname, 'index.html'));
+    }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
