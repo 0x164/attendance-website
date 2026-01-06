@@ -15,7 +15,8 @@ const DATA_FILE = path.join(__dirname, 'attendance.json');
 app.use(express.json());
 
 /**
- * 2. API Routes (Check these before serving static files)
+ * 2. API Routes
+ * Handle these first so they don't get caught by the static file or SPA fallback.
  */
 app.get('/api/attendance', (req, res) => {
     try {
@@ -43,15 +44,16 @@ app.post('/api/attendance', (req, res) => {
 
 /**
  * 3. Static Files
+ * Serves index.html, index.tsx, etc.
  */
 app.use(express.static(__dirname));
 
 /**
  * 4. Catch-all Route for SPA
- * The '(.*)' syntax is required for newer path-to-regexp versions to avoid the 
- * "Missing parameter name" error.
+ * Using app.use without a path pattern is the safest way to provide a fallback
+ * across all Node/Express versions because it avoids the path-to-regexp parser.
  */
-app.get('(.*)', (req, res) => {
+app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
