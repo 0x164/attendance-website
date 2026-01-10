@@ -11,11 +11,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'attendance.json');
 
-// 1. Global Middleware
+// Global Middleware
 app.use(express.json());
 
-// 2. MIME Type Fix for .tsx and .ts files
-// Browsers require application/javascript for ESM modules
+// MIME Type Fix for .tsx and .ts files
 app.use((req, res, next) => {
     if (req.path.endsWith('.tsx') || req.path.endsWith('.ts')) {
         res.set('Content-Type', 'application/javascript');
@@ -24,21 +23,28 @@ app.use((req, res, next) => {
 });
 
 /**
- * 3. API Routes
+ * Optimized API Routes
  */
-app.get('/api/attendance', (req, res) => {
+
+// Helper to load attendance data
+const loadData = () => {
     try {
         if (fs.existsSync(DATA_FILE)) {
             const data = fs.readFileSync(DATA_FILE, 'utf8');
-            return res.json(JSON.parse(data));
+            return JSON.parse(data);
         }
-        res.json({});
+        return {};
     } catch (err) {
         console.error('Read error:', err);
-        res.status(500).json({ error: 'Failed to read attendance data' });
+        return {};
     }
+};
+
+app.get('/api/attendance', (req, res) => {
+    res.json(loadData());
 });
 
+// Full overwrite endpoint (kept for compatibility)
 app.post('/api/attendance', (req, res) => {
     try {
         const newData = req.body;
@@ -50,15 +56,34 @@ app.post('/api/attendance', (req, res) => {
     }
 });
 
+// NEW: Optimized Partial Update endpoint
+app.post('/api/attendance/update', (req, res) => {
+    try {
+        const { weekId, sessionId, value } = req.body;
+        
+        if (!weekId || !sessionId) {
+            return res.status(400).json({ error: 'Missing weekId or sessionId' });
+        }
+
+        const currentData = loadData();
+        
+        // Deep merge the specific field
+        if (!currentData[weekId]) currentData[weekId] = {};
+        currentData[weekId][sessionId] = value;
+
+        fs.writeFileSync(DATA_FILE, JSON.stringify(currentData, null, 2), 'utf8');
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Partial update error:', err);
+        res.status(500).json({ error: 'Failed to update attendance' });
+    }
+});
+
 /**
- * 4. Static Files
+ * Static Files & SPA Routing
  */
 app.use(express.static(__dirname));
 
-/**
- * 5. Catch-all Route for Single Page Application
- * Only serve index.html for navigation requests, return 404 for missing assets.
- */
 app.use((req, res) => {
     const ext = path.extname(req.path);
     if (ext && ext !== '.html') {
@@ -73,6 +98,6 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('\x1b[1m\x1b[32m%s\x1b[0m', '  UniAttend Shared Server is LIVE!');
     console.log('\x1b[36m%s\x1b[0m', '-----------------------------------------');
     console.log(` Port:    ${PORT}`);
-    console.log(` Data:    ${DATA_FILE}`);
+    console.log(` Optimization: Delta Sync Enabled`);
     console.log('\x1b[36m%s\x1b[0m', '-----------------------------------------');
 });

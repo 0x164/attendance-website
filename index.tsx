@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 
 // --- INTERFACES ---
@@ -41,7 +41,6 @@ const copyToClipboard = async (text: string) => {
     }
   }
   
-  // Fallback for environments where navigator.clipboard is unavailable
   const textArea = document.createElement("textarea");
   textArea.value = text;
   textArea.style.position = "fixed";
@@ -61,7 +60,7 @@ const copyToClipboard = async (text: string) => {
   }
 };
 
-// --- DATA GENERATION & CONSTANTS ---
+// --- DATA GENERATION ---
 const DEFAULT_SCHEDULE: Omit<DailySchedule, 'date'>[] = [
   { day: 'Monday', sessions: [{ id: 'mon_1', courseCode: 'FIT1047', sessionType: 'W02' }] },
   { day: 'Tuesday', sessions: [
@@ -121,19 +120,12 @@ const generateWeeks = (count: number, startDate: Date): AcademicWeek[] => {
   return weeks;
 };
 
-/**
- * CALCULATION:
- * Jan 6, 2026 (Tuesday) is Week 10.
- * Week 10 Monday is Jan 5, 2026.
- * Week 1 Monday = Jan 5, 2026 - (9 * 7 days) = Nov 3, 2025.
- */
 const ACADEMIC_WEEKS = generateWeeks(20, new Date(2025, 10, 3)); 
 
 // --- COMPONENTS ---
 
 const WeekSelector = ({ onSelect }: { onSelect: (w: AcademicWeek) => void }) => {
   const now = new Date();
-  
   const groupedWeeks = ACADEMIC_WEEKS.reduce((acc, week) => {
     if (!acc[week.monthLabel]) acc[week.monthLabel] = [];
     acc[week.monthLabel].push(week);
@@ -315,8 +307,8 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
 const App = () => {
   const [selectedWeek, setSelectedWeek] = useState<AcademicWeek | null>(null);
   const [attendance, setAttendance] = useState<AttendanceStore>({});
+  const debounceTimer = useRef<number | null>(null);
   
-  // Persistence logic for dark mode
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('uni-attend-theme');
@@ -335,20 +327,34 @@ const App = () => {
     localStorage.setItem('uni-attend-theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
+  // Optimized Delta Sync with Debouncing
+  const syncUpdate = useCallback((weekId: string, sessionId: string, value: string) => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    
+    debounceTimer.current = window.setTimeout(() => {
+      fetch('/api/attendance/update', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ weekId, sessionId, value }) 
+      }).catch(err => console.error('Sync failed:', err));
+    }, 500); // 500ms delay to wait for user typing pause
+  }, []);
+
   const update = (sid: string, val: string) => {
-    const next = { 
-      ...attendance, 
-      [selectedWeek!.id]: { 
-        ...(attendance[selectedWeek!.id] || {}), 
-        [sid]: val.toUpperCase().slice(0, 5) 
-      } 
-    };
-    setAttendance(next);
-    fetch('/api/attendance', { 
-      method: 'POST', 
-      headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify(next) 
-    }).catch(() => {});
+    const cleanedVal = val.toUpperCase().slice(0, 5);
+    const weekId = selectedWeek!.id;
+
+    // 1. Optimistic local update
+    setAttendance(prev => ({
+      ...prev,
+      [weekId]: {
+        ...(prev[weekId] || {}),
+        [sid]: cleanedVal
+      }
+    }));
+
+    // 2. Optimized partial sync
+    syncUpdate(weekId, sid, cleanedVal);
   };
 
   return (
@@ -381,7 +387,7 @@ const App = () => {
       
       <footer className="mt-auto pt-16 pb-8 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] flex flex-col items-center gap-2">
         <div className="w-12 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mb-2"></div>
-        University Attendance Tracker v2.6
+        University Attendance Tracker v2.7 (Optimized)
         <span className="opacity-50 font-medium tracking-normal text-[8px]">Current Time: {new Date().toLocaleDateString()}</span>
       </footer>
     </div>
