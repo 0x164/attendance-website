@@ -30,6 +30,8 @@ interface AttendanceStore {
   };
 }
 
+type SyncStatus = 'saved' | 'saving' | 'error';
+
 // --- UTILS ---
 const copyToClipboard = async (text: string) => {
   if (typeof window !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
@@ -117,6 +119,46 @@ const generateWeeks = (count: number): AcademicWeek[] => {
 };
 
 const ACADEMIC_WEEKS = generateWeeks(20); 
+
+// --- STATUS COMPONENT ---
+const ConnectionBadge = ({ isOnline, syncStatus, onRetry }: { isOnline: boolean, syncStatus: SyncStatus, onRetry?: () => void }) => {
+  const statusConfig = {
+    saving: { label: 'Syncing...', color: 'text-indigo-500', icon: 'animate-spin' },
+    saved: { label: 'Saved', color: 'text-emerald-500', icon: '' },
+    error: { label: 'Sync Error', color: 'text-rose-500', icon: '' }
+  };
+
+  return (
+    <div className="flex items-center gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2 rounded-2xl shadow-sm transition-all">
+      <div className="flex items-center gap-2">
+        <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`}></div>
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+          {isOnline ? 'Online' : 'Offline'}
+        </span>
+      </div>
+      <div className="w-px h-3 bg-slate-100 dark:bg-slate-800"></div>
+      <div className="flex items-center gap-2">
+        <span className={`text-[10px] font-black uppercase tracking-widest ${statusConfig[syncStatus].color} transition-colors`}>
+          {statusConfig[syncStatus].label}
+        </span>
+        {syncStatus === 'error' && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onRetry?.(); }}
+            className="text-[9px] bg-rose-50 dark:bg-rose-950/30 text-rose-500 px-2 py-0.5 rounded-lg border border-rose-100 dark:border-rose-900/30 hover:bg-rose-100 transition-colors"
+          >
+            Retry
+          </button>
+        )}
+        {syncStatus === 'saving' && (
+          <svg className={`w-3 h-3 ${statusConfig.saving.icon} text-indigo-500`} fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // --- MAIN APP COMPONENTS ---
 
@@ -306,7 +348,11 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
 const App = () => {
   const [selectedWeek, setSelectedWeek] = useState<AcademicWeek | null>(null);
   const [attendance, setAttendance] = useState<AttendanceStore>({});
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('saved');
+  const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
+  
   const debounceTimer = useRef<number | null>(null);
+  const lastUpdate = useRef<{ weekId: string, sessionId: string, value: string } | null>(null);
   
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -317,8 +363,25 @@ const App = () => {
     return false;
   });
 
+  // Load initial data
   useEffect(() => {
-    fetch('/api/attendance').then(r => r.json()).then(setAttendance).catch(() => {});
+    fetch('/api/attendance')
+      .then(r => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then(setAttendance)
+      .catch(() => setSyncStatus('error'));
+
+    // Network status listeners
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   useEffect(() => {
@@ -326,34 +389,63 @@ const App = () => {
     localStorage.setItem('uni-attend-theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
-  const syncUpdate = useCallback((weekId: string, sessionId: string, value: string) => {
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = window.setTimeout(() => {
-      fetch('/api/attendance/update', { 
+  const performSync = useCallback(async (weekId: string, sessionId: string, value: string) => {
+    setSyncStatus('saving');
+    lastUpdate.current = { weekId, sessionId, value };
+    
+    try {
+      const res = await fetch('/api/attendance/update', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ weekId, sessionId, value }) 
-      }).catch(err => console.error('Sync failed:', err));
-    }, 400);
+      });
+      
+      if (!res.ok) throw new Error('Server error');
+      setSyncStatus('saved');
+      lastUpdate.current = null;
+    } catch (err) {
+      console.error('Sync failed:', err);
+      setSyncStatus('error');
+    }
   }, []);
+
+  const syncUpdate = useCallback((weekId: string, sessionId: string, value: string) => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = window.setTimeout(() => {
+      performSync(weekId, sessionId, value);
+    }, 600);
+  }, [performSync]);
 
   const update = (sid: string, val: string) => {
     const cleanedVal = val.toUpperCase().slice(0, 5);
     const weekId = selectedWeek!.id;
+    
+    // Update local state immediately for snappiness
     setAttendance(prev => ({ ...prev, [weekId]: { ...(prev[weekId] || {}), [sid]: cleanedVal } }));
+    
+    // Trigger sync
     syncUpdate(weekId, sid, cleanedVal);
+  };
+
+  const handleRetry = () => {
+    if (lastUpdate.current) {
+      const { weekId, sessionId, value } = lastUpdate.current;
+      performSync(weekId, sessionId, value);
+    }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 py-12 px-2 flex flex-col items-center transition-colors duration-500">
-      <div className="w-full max-w-5xl flex justify-between items-center mb-12 px-4">
+      <div className="w-full max-w-5xl flex justify-between items-center mb-12 px-4 gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
           </div>
           <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tighter">UniAttend <span className="text-indigo-600">Pro</span></h1>
         </div>
+        
         <div className="flex items-center gap-3">
+          <ConnectionBadge isOnline={isOnline} syncStatus={syncStatus} onRetry={handleRetry} />
           <button 
             onClick={() => setIsDarkMode(!isDarkMode)} 
             className="p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:scale-110 active:scale-95 text-xl"
@@ -363,6 +455,20 @@ const App = () => {
         </div>
       </div>
       
+      {!isOnline && (
+        <div className="w-full max-w-5xl mb-8 px-4 animate-in slide-in-from-top duration-300">
+          <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 p-4 rounded-2xl flex items-center gap-4">
+            <div className="w-10 h-10 bg-rose-100 dark:bg-rose-900/50 rounded-xl flex items-center justify-center text-rose-500">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-rose-800 dark:text-rose-200">You're currently offline</p>
+              <p className="text-xs text-rose-600 dark:text-rose-400">Changes will not be saved until your connection is restored.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!selectedWeek ? (
         <WeekSelector onSelect={setSelectedWeek} />
       ) : (
@@ -376,8 +482,8 @@ const App = () => {
       
       <footer className="mt-auto pt-16 pb-8 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] flex flex-col items-center gap-2 text-center">
         <div className="w-12 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mb-2"></div>
-        University Attendance Tracker v2.9
-        <span className="opacity-50 font-medium tracking-normal text-[8px]">Clean Mode Active • Optimized for Extensions</span>
+        University Attendance Tracker v3.0
+        <span className="opacity-50 font-medium tracking-normal text-[8px]">Sync Engine Active • Offline Detection Ready</span>
       </footer>
     </div>
   );
