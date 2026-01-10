@@ -37,10 +37,9 @@ const copyToClipboard = async (text: string) => {
       await navigator.clipboard.writeText(text);
       return true;
     } catch (err) {
-      console.error('Clipboard API failed, trying fallback', err);
+      console.error('Clipboard API failed', err);
     }
   }
-  
   const textArea = document.createElement("textarea");
   textArea.value = text;
   textArea.style.position = "fixed";
@@ -54,13 +53,13 @@ const copyToClipboard = async (text: string) => {
     document.body.removeChild(textArea);
     return successful;
   } catch (err) {
-    console.error('Fallback copy failed', err);
     document.body.removeChild(textArea);
     return false;
   }
 };
 
-// --- DATA GENERATION ---
+// --- DATA GENERATION (Nov 3rd 2025 Start) ---
+const START_DATE = new Date(2025, 10, 3);
 const DEFAULT_SCHEDULE: Omit<DailySchedule, 'date'>[] = [
   { day: 'Monday', sessions: [{ id: 'mon_1', courseCode: 'FIT1047', sessionType: 'W02' }] },
   { day: 'Tuesday', sessions: [
@@ -85,9 +84,9 @@ const getOrdinal = (n: number) => {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 };
 
-const generateWeeks = (count: number, startDate: Date): AcademicWeek[] => {
+const generateWeeks = (count: number): AcademicWeek[] => {
   const weeks: AcademicWeek[] = [];
-  let current = new Date(startDate);
+  let current = new Date(START_DATE);
   for (let i = 0; i < count; i++) {
     const monday = new Date(current);
     const friday = new Date(current); 
@@ -103,26 +102,23 @@ const generateWeeks = (count: number, startDate: Date): AcademicWeek[] => {
     });
 
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const monthLabel = `${monthNames[monday.getMonth()]} ${monday.getFullYear()}`;
-    const label = `Mon ${getOrdinal(monday.getDate())} - Fri ${getOrdinal(friday.getDate())}`;
-    
     weeks.push({ 
       id: `w${i+1}`, 
       weekNumber: i + 1,
-      label, 
+      label: `Mon ${getOrdinal(monday.getDate())} - Fri ${getOrdinal(friday.getDate())}`, 
       startDate: new Date(monday), 
       endDate: new Date(friday), 
       schedule,
-      monthLabel
+      monthLabel: `${monthNames[monday.getMonth()]} ${monday.getFullYear()}`
     });
     current.setDate(current.getDate() + 7);
   }
   return weeks;
 };
 
-const ACADEMIC_WEEKS = generateWeeks(20, new Date(2025, 10, 3)); 
+const ACADEMIC_WEEKS = generateWeeks(20); 
 
-// --- COMPONENTS ---
+// --- MAIN APP COMPONENTS ---
 
 const WeekSelector = ({ onSelect }: { onSelect: (w: AcademicWeek) => void }) => {
   const now = new Date();
@@ -134,9 +130,12 @@ const WeekSelector = ({ onSelect }: { onSelect: (w: AcademicWeek) => void }) => 
 
   return (
     <div className="w-full max-w-5xl space-y-12 animate-in fade-in duration-500 px-4">
-      <div className="bg-white dark:bg-slate-900 p-10 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 text-center">
-        <h2 className="text-3xl font-black text-slate-800 dark:text-white mb-2">Select Academic Week</h2>
-        <p className="text-slate-500 dark:text-slate-400">Track and share university attendance codes</p>
+      <div className="bg-white dark:bg-slate-900 p-10 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 text-center relative overflow-hidden">
+        <div className="relative z-10">
+          <h2 className="text-3xl font-black text-slate-800 dark:text-white mb-2">Academic Portal</h2>
+          <p className="text-slate-500 dark:text-slate-400">Select a week to manage attendance codes</p>
+        </div>
+        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
       </div>
 
       {Object.entries(groupedWeeks).map(([month, weeks]) => (
@@ -208,39 +207,43 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
   return (
     <div className="w-full max-w-2xl animate-in slide-in-from-right-8 duration-500 px-4 pb-20">
       <div className="flex items-center justify-start mb-8">
-        <button onClick={onBack} className="text-slate-500 font-bold hover:text-indigo-600 flex items-center transition-colors">
-          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
-          All Weeks
+        <button onClick={onBack} className="text-slate-500 font-bold hover:text-indigo-600 flex items-center transition-colors group">
+          <div className="w-8 h-8 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center mr-3 group-hover:border-indigo-500 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
+          </div>
+          Weeks List
         </button>
       </div>
       
       <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden">
         <div className="p-10 border-b border-slate-50 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
           <div className="flex items-center gap-3 mb-1">
-            <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Week {week.weekNumber}</span>
+            <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">W{week.weekNumber} TRACKER</span>
           </div>
           <h2 className="text-3xl font-black text-slate-800 dark:text-white">{week.label}</h2>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2 flex items-center gap-2">
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" /><path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h8a2 2 0 00-2-2H5z" /></svg>
-            Click code to copy
-          </p>
+          <div className="flex items-center gap-4 mt-3">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full">
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" /><path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h8a2 2 0 00-2-2H5z" /></svg>
+              Click to Copy
+            </p>
+          </div>
         </div>
         
         <div className="p-10 space-y-14">
           {week.schedule.map((day: any) => (
             <div key={day.date}>
-              <h3 className="text-sm font-black text-slate-400 dark:text-slate-500 uppercase border-b border-slate-100 dark:border-slate-800 pb-3 mb-6 flex justify-between">
+              <h3 className="text-sm font-black text-slate-400 dark:text-slate-500 uppercase border-b border-slate-100 dark:border-slate-800 pb-3 mb-6 flex justify-between items-center">
                 <span>{day.day}</span>
-                <span className="font-mono">{day.date}</span>
+                <span className="font-mono text-[10px] bg-slate-50 dark:bg-slate-950 px-2 py-0.5 rounded border border-slate-100 dark:border-slate-800">{day.date}</span>
               </h3>
-              <div className="space-y-5">
+              <div className="space-y-4">
                 {day.sessions.map((s: any) => {
                   const val = attendance[s.id] || '';
                   const isFull = val.length === 5;
                   const isLocked = isFull && editingId !== s.id;
                   
                   return (
-                    <div key={s.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border border-slate-50 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-900 hover:shadow-sm transition-all group/row">
+                    <div key={s.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border border-slate-50 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-900/50 hover:border-indigo-100 dark:hover:border-indigo-900/30 transition-all group/row">
                       <button 
                         onClick={() => copy(`${s.courseCode} ${s.sessionType}`, s.id)} 
                         className="text-left font-mono font-bold text-slate-700 dark:text-slate-200 hover:text-indigo-600 flex items-center group/btn"
@@ -256,24 +259,20 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
                           <div className="flex items-center gap-2">
                             <button 
                               onClick={() => copy(val, `val_${s.id}`)}
-                              className="w-32 text-center font-mono font-black py-2.5 rounded-xl bg-white dark:bg-slate-950 border-2 border-indigo-500/20 text-indigo-600 dark:text-indigo-400 uppercase hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-500 transition-all group/val shadow-sm flex items-center justify-center gap-2"
+                              className="w-32 text-center font-mono font-black py-2.5 rounded-xl bg-white dark:bg-slate-950 border-2 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 uppercase hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-500 transition-all group/val shadow-sm flex items-center justify-center gap-2"
                             >
                               {copiedId === `val_${s.id}` ? (
-                                <span className="flex items-center justify-center gap-2">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                  DONE
-                                </span>
+                                <svg className="w-4 h-4 animate-in zoom-in" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>
                               ) : (
                                 <>
                                   {val}
-                                  <svg className="w-3 h-3 opacity-40 group-hover/val:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
+                                  <svg className="w-3 h-3 opacity-20 group-hover/val:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" /></svg>
                                 </>
                               )}
                             </button>
                             <button 
                               onClick={() => handleEdit(s.id)}
                               className="p-2.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-xl transition-all opacity-0 group-hover/row:opacity-100"
-                              title="Edit code"
                             >
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                             </button>
@@ -327,33 +326,21 @@ const App = () => {
     localStorage.setItem('uni-attend-theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
-  // Optimized Delta Sync with Debouncing
   const syncUpdate = useCallback((weekId: string, sessionId: string, value: string) => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    
     debounceTimer.current = window.setTimeout(() => {
       fetch('/api/attendance/update', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ weekId, sessionId, value }) 
       }).catch(err => console.error('Sync failed:', err));
-    }, 500); // 500ms delay to wait for user typing pause
+    }, 400);
   }, []);
 
   const update = (sid: string, val: string) => {
     const cleanedVal = val.toUpperCase().slice(0, 5);
     const weekId = selectedWeek!.id;
-
-    // 1. Optimistic local update
-    setAttendance(prev => ({
-      ...prev,
-      [weekId]: {
-        ...(prev[weekId] || {}),
-        [sid]: cleanedVal
-      }
-    }));
-
-    // 2. Optimized partial sync
+    setAttendance(prev => ({ ...prev, [weekId]: { ...(prev[weekId] || {}), [sid]: cleanedVal } }));
     syncUpdate(weekId, sid, cleanedVal);
   };
 
@@ -362,16 +349,18 @@ const App = () => {
       <div className="w-full max-w-5xl flex justify-between items-center mb-12 px-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
           </div>
-          <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tighter">UniAttend</h1>
+          <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tighter">UniAttend <span className="text-indigo-600">Pro</span></h1>
         </div>
-        <button 
-          onClick={() => setIsDarkMode(!isDarkMode)} 
-          className="p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:scale-110 active:scale-95 text-xl"
-        >
-          {isDarkMode ? '☀️' : '🌙'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsDarkMode(!isDarkMode)} 
+            className="p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:scale-110 active:scale-95 text-xl"
+          >
+            {isDarkMode ? '☀️' : '🌙'}
+          </button>
+        </div>
       </div>
       
       {!selectedWeek ? (
@@ -385,10 +374,10 @@ const App = () => {
         />
       )}
       
-      <footer className="mt-auto pt-16 pb-8 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] flex flex-col items-center gap-2">
+      <footer className="mt-auto pt-16 pb-8 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] flex flex-col items-center gap-2 text-center">
         <div className="w-12 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mb-2"></div>
-        University Attendance Tracker v2.7 (Optimized)
-        <span className="opacity-50 font-medium tracking-normal text-[8px]">Current Time: {new Date().toLocaleDateString()}</span>
+        University Attendance Tracker v2.9
+        <span className="opacity-50 font-medium tracking-normal text-[8px]">Clean Mode Active • Optimized for Extensions</span>
       </footer>
     </div>
   );
