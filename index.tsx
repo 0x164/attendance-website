@@ -264,7 +264,7 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
                           <div className="flex items-center gap-2">
                             <button 
                               onClick={() => copy(val, `val_${s.id}`)}
-                              className="w-36 text-center font-mono font-black py-2.5 rounded-xl bg-white dark:bg-slate-950 border-2 border-indigo-500/20 text-indigo-600 dark:text-indigo-400 uppercase hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-500 transition-all group/val shadow-sm flex items-center justify-center gap-2"
+                              className="w-32 text-center font-mono font-black py-2.5 rounded-xl bg-white dark:bg-slate-950 border-2 border-indigo-500/20 text-indigo-600 dark:text-indigo-400 uppercase hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-500 transition-all group/val shadow-sm flex items-center justify-center gap-2"
                             >
                               {copiedId === `val_${s.id}` ? (
                                 <span className="flex items-center justify-center gap-2">
@@ -315,7 +315,16 @@ const AttendanceTracker = ({ week, attendance, onUpdate, onBack }: any) => {
 const App = () => {
   const [selectedWeek, setSelectedWeek] = useState<AcademicWeek | null>(null);
   const [attendance, setAttendance] = useState<AttendanceStore>({});
-  const [isDarkMode, setIsDarkMode] = useState(typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)').matches : false);
+  
+  // Persistence logic for dark mode
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('uni-attend-theme');
+      if (saved !== null) return saved === 'dark';
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
+  });
 
   useEffect(() => {
     fetch('/api/attendance').then(r => r.json()).then(setAttendance).catch(() => {});
@@ -323,6 +332,7 @@ const App = () => {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDarkMode);
+    localStorage.setItem('uni-attend-theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
   const update = (sid: string, val: string) => {
